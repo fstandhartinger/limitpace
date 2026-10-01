@@ -2,7 +2,7 @@
 
 LimitPace puts subscription usage beside its pace line above the Claude Code prompt. See whether a five-hour or weekly allowance is ahead of schedule, compare Claude accounts and other providers, and open an account switcher with `/limitpace`. An optional advisor gives Claude provider-neutral delegation guidance.
 
-Requires Claude Code **2.1.287 or later** and a rollout that permits installed hooks modules. Version 0.1.0 passes strict validation and all 32 official tests. Terminal bands and panes have been checked in real interactive sessions without model prompts; Desktop still needs a live acceptance check.
+Requires Claude Code **2.1.287 or later**, the first version with mods. No dependencies, no build step, no telemetry.
 
 The images below are captures of LimitPace running in Claude Code at 120 columns with fixed demo data.
 
@@ -14,7 +14,7 @@ The images below are captures of LimitPace running in Claude Code at 120 columns
 
 ## Install
 
-People with access to the repository can install its marketplace:
+The repository is its own plugin marketplace:
 
 ```text
 /plugin marketplace add fstandhartinger/limitpace
@@ -22,7 +22,7 @@ People with access to the repository can install its marketplace:
 /reload-plugins
 ```
 
-Restart Claude Code if it does not appear after reloading. This repository is currently private; these commands do not make it public. For one development session, use `claude --plugin-dir /path/to/limitpace`.
+Restart Claude Code if it does not appear after reloading. For one development session, use `claude --plugin-dir /path/to/limitpace`.
 
 ## Read the band
 
@@ -64,7 +64,7 @@ For an installed plugin, values live under `pluginConfigs["limitpace@limitpace"]
 
 The config file is optional and every key is optional. With no file, LimitPace measures exactly the current Claude account and uses the detailed band. Invalid JSON gives a dim explanation and falls back to that account. Changes to the config file take effect after `/reload-plugins` or a restart.
 
-Use [the minimal example](examples/config.minimal.json) for a single account, or [the Sandy example](examples/config.sandy.json) for Claude accounts A/B, Codex and a local Devin quota sample. The Sandy example deliberately has no account-switch command: Sandy's dual-account runner selects its own account. A general example is:
+Use [the minimal example](examples/config.minimal.json) for a single account, or [the multi-account example](examples/config.multi.json) for two Claude accounts, Codex and a local Devin quota sample. That example has no account-switch command, because each account there lives in its own `CLAUDE_CONFIG_DIR`. A general example is:
 
 ```json
 {
