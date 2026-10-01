@@ -1,0 +1,11 @@
+{
+  "claudeProfiles": [
+    {"label": "A", "configDir": "~/.claude-A"},
+    {"label": "B", "configDir": "~/.claude"}
+  ],
+  "providers": [
+    {"id": "codex", "label": "ChatGPT/Codex", "type": "codex", "authFile": "~/.codex/auth.json", "delegate": "codex exec"},
+    {"id": "devin", "label": "Devin", "type": "json", "path": "~/.local/state/agent-limits/devin-latest.json", "map": {"weekPercent": "weekly_percent", "weekResetsAt": "weekly_reset_at"}, "delegate": "devin"}
+  ],
+  "advisor": {"target": "auto", "minChangePoints": 5}
+}

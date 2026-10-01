@@ -1,3 +1,5 @@
-node_modules/
 .claude-plugin/types/
+tsconfig.json
+screenshots/private/
+STATE.md
 *.log

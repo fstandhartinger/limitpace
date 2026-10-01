@@ -1,0 +1,15 @@
+{
+  "name": "limitpace",
+  "owner": {
+    "name": "Florian Standhartinger"
+  },
+  "plugins": [
+    {
+      "name": "limitpace",
+      "source": "./"
+    }
+  ],
+  "metadata": {
+    "description": "LimitPace usage and pace mod for Claude Code."
+  }
+}
