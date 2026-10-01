@@ -9,4 +9,4 @@
 - Opt-in provider-neutral prompt/tool and instruction-file advisor.
 - Demo mode, configuration examples, tests and real terminal demo captures.
 - Strict marketplace/plugin validation, 32 official tests and 26 local tests
-  pass; live terminal demos and the real Sandy view were checked.
+  pass; live terminal demos and a real multi-account setup were checked.
