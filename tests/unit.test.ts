@@ -156,3 +156,45 @@ test('pane switcher substitutes argv without shell and reports failure without s
   expect(h.calls.find(c => c.name === 'process.run').args[0]).toEqual(['switch-account', 'A']);
   expect(h.toasts[0]).toContain('switch failed'); expect(h.toasts.join()).not.toContain('TEST-SENTINEL');
 });
+test('Codex provider reads auth in memory, sends only usage request and never caches a token', async () => {
+  const data = { providers: [{ id: 'codex', label: 'Codex', type: 'codex', authFile: '/codex-auth.json' }] };
+  let url;
+  const h = harness({}, { now: NOW, limits: [{ kind: 'seven_day', percentUsed: 31 }], files: { ...configFiles(data), '/codex-auth.json': JSON.stringify({ tokens: { access_token: 'TEST-SENTINEL', account_id: 'TEST-ACCOUNT' } }) }, fetch: async (request, init) => {
+    url = request;
+    expect(init.headers.Authorization).toBe('Bearer TEST-SENTINEL'); expect(init.headers['ChatGPT-Account-Id']).toBe('TEST-ACCOUNT');
+    return { ok: true, status: 200, text: JSON.stringify({ rateLimit: { primaryWindow: { usedPercent: 85, limitWindowSeconds: 604800, resetAt: NOW / 1000 }, secondaryWindow: { usedPercent: 42, limitWindowSeconds: 18000, resetAt: NOW / 1000 } } }) };
+  } });
+  await h.start();
+  expect(url).toBe('https://chatgpt.com/backend-api/wham/usage'); expect(h.state.get('view').readings[1].week.used).toBe(85);
+  expect(JSON.stringify([...h.store.values()])).not.toContain('TEST-SENTINEL'); expect(JSON.stringify([...h.state.values()])).not.toContain('TEST-ACCOUNT');
+});
+test('configured JSON and command providers parse mapped usage with no shell', async () => {
+  const data = { providers: [{ id: 'json', label: 'JSON', type: 'json', path: '/quota.json', map: { weekPercent: 'weekly_percent', weekResetsAt: 'weekly_reset_at' } }, { id: 'cmd', label: 'Command', type: 'command', argv: ['usage-tool', '--json'], map: { weekPercent: 'week.used', weekResetsAt: 'week.reset' } }] };
+  const h = harness({}, { now: NOW, limits: [{ kind: 'seven_day', percentUsed: 31 }], files: { ...configFiles(data), '/quota.json': JSON.stringify({ weekly_percent: 25, weekly_reset_at: NOW + WEEK / 2 }) }, run: async args => {
+    expect(args).toEqual(['usage-tool', '--json']); return { exitCode: 0, stdout: JSON.stringify({ week: { used: 44, reset: NOW + WEEK / 2 } }), stderr: '' };
+  } });
+  await h.start(); expect(h.state.get('view').readings[1].week.used).toBe(25); expect(h.state.get('view').readings[2].week.used).toBe(44);
+});
+test('Keychain tokenCommand is argv only and never stored or drawn', async () => {
+  const data = { claudeProfiles: [{ label: 'Keychain', configDir: '/keychain-profile', tokenCommand: ['keychain-reader', '--token'] }] };
+  const h = harness({}, { now: NOW, files: configFiles(data), run: async args => {
+    expect(args).toEqual(['keychain-reader', '--token']); return { exitCode: 0, stdout: 'TEST-SENTINEL\n', stderr: '' };
+  }, fetch: async (url, init) => {
+    expect(init.headers.Authorization).toBe('Bearer TEST-SENTINEL'); return { ok: true, status: 200, text: JSON.stringify({ seven_day: { utilization: 25, resets_at: new Date(NOW + WEEK / 2).toISOString() } }) };
+  } });
+  await h.start(); expect(h.state.get('view').readings[0].week.used).toBe(25); expect(treeText(await h.render())).not.toContain('TEST-SENTINEL');
+});
+test('timer refreshes cached external readings only after the configured interval', async () => {
+  let runs = 0;
+  const data = { providers: [{ id: 'cmd', label: 'Command', type: 'command', argv: ['quota'] }] };
+  const h = harness({ refresh_minutes: 10 }, { now: NOW, limits: [{ kind: 'seven_day', percentUsed: 31 }], files: configFiles(data), run: async () => {
+    runs++; return { exitCode: 0, stdout: JSON.stringify({ weekPercent: 20 + runs, weekResetsAt: NOW + WEEK / 2 }), stderr: '' };
+  } });
+  await h.start(); expect(h.timers.length).toBe(1); expect(h.timers[0].ms).toBe(600000);
+  h.setNow(NOW + 5 * 60000); await h.emit('turn.complete'); expect(runs).toBe(1);
+  h.setNow(NOW + 10 * 60000); await h.timers[0].callback(); expect(runs).toBe(2); expect(h.state.get('view').readings[1].week.used).toBe(22);
+});
+test('relative explicit advisor target is under the project root', async () => {
+  const h = harness({ advisor: 'file' }, { now: NOW, limits: [{ kind: 'seven_day', percentUsed: 31, resetsAt: new Date(NOW + WEEK / 2).toISOString() }], files: { ...configFiles({ advisor: { target: 'notes.md' } }), '/project/notes.md': 'Original notes\n' } });
+  await h.start(); expect(h.files.get('/project/notes.md')).toContain('Original notes\n<!-- limitpace:start -->');
+});

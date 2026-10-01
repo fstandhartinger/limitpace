@@ -1,4 +1,4 @@
-import { parseClaude, parseCodex, parseMapped, parseSession, demoReadings, advice, snapshot, changed, summary, upsertBlock, cleanLabel } from './core.mjs';
+import { parseClaude, parseCodex, parseMapped, parseSession, demoReadings, advice, snapshot, changed, summary, upsertBlock, cleanLabel, resetText } from './core.mjs';
 import { band, barRow } from './drawing.mjs';
 
 const VERSION = '0.1.0';
@@ -52,8 +52,8 @@ async function loadConfig($) {
   return config;
 }
 function publicReading(provider, fields, now) {
-  return { id: provider.id, label: provider.label, type: provider.type, current: provider.current,
-    weight: provider.weight, delegate: provider.delegate, fetchedAt: now, ...fields };
+  return JSON.parse(JSON.stringify({ id: provider.id, label: provider.label, type: provider.type, current: provider.current,
+    weight: provider.weight, delegate: provider.delegate, fetchedAt: now, ...fields }));
 }
 async function measure($, provider, now, force, live) {
   const key = provider.cacheKey;
@@ -112,7 +112,7 @@ async function measure($, provider, now, force, live) {
       if (result.exitCode !== 0) throw new Error();
       fields = parseMapped(JSON.parse(result.stdout), provider.map); source = 'configured command';
     }
-    if (!error && !fields?.session && !fields?.week) error = 'no usage windows reported';
+    if (!error && !fields?.session && !fields?.week) { error = 'no usage windows reported'; fields = undefined; }
   } catch {
     // Never echo thrown messages or process output: either can contain credentials.
     error = provider.type === 'claude' ? `credentials or usage unavailable; open a session on ${provider.label}` : 'usage unavailable; check configured source';
@@ -138,7 +138,7 @@ async function refresh($, force = false) {
       readings = [];
       for (const provider of [...cfg.profiles, ...cfg.providers]) readings.push(await measure($, provider, now, force, live));
     }
-    await $.state.set(VIEW, { readings, now, configError: cfg.configError });
+    await $.state.set(VIEW, { readings, now, ...(cfg.configError ? { configError: cfg.configError } : {}) });
     if (enabled && ['file', 'both'].includes(options.advisor) && !cfg.demo) await writeAdvisor($, readings, now);
   } finally { refreshing = false; }
 }
@@ -235,13 +235,13 @@ export function register(on, userOptions) {
     if (arg) return { text: 'Use /limitpace [refresh|text].' };
     const surfaces = await $.session.surfaces();
     if (!surfaces.some(s => s === 'terminal' || s === 'desktop')) return { text };
-    const opened = await $.ui.open({ id: 'limitpace', title: 'LimitPace', focus: true, closeOnEscape: true, rows: 25, columns: 66 });
+    const opened = await $.ui.open({ id: 'limitpace', title: 'LimitPace', focus: true, closeOnEscape: true, rows: 30, columns: 66 });
     return opened.isPlaced ? {} : { text };
   });
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || options.layout === 'off' || !enabled) return next(e);
+    if (e.props.hasSurvey || options.layout === 'off') return next(e);
     const { value: view } = await $.state.get(VIEW);
-    if (!view?.readings.length) return next(e);
+    if (!enabled || !view?.readings.length) return next(e);
     const existing = await next(e);
     const { Box, Text } = $.ui.resolve(e);
     return Box({ flexDirection: 'column', paddingX: 1, children: [
@@ -258,18 +258,19 @@ export function register(on, userOptions) {
     const profiles = config?.demo ? view.readings.filter(r => r.type === 'claude') : config?.profiles ?? [];
     return Box({ flexDirection: 'column', paddingX: 1, children: [
       Text({ bold: true, children: 'Usage and pace' }),
-      ...view.readings.flatMap(r => [
-        Text({ bold: true, children: '\n' + r.label + (r.current ? ' * this session' : '') }),
-        barRow(Box, Text, 'Session', r.session, view.now, columns),
-        barRow(Box, Text, 'Week', r.week, view.now, columns, true),
-        Text({ dimColor: true, wrap: 'wrap', children: `${r.source} · age ${Math.max(0, Math.floor((view.now - r.fetchedAt) / 60000))}m${r.error ? '\n' + r.error : ''}` }),
-      ]),
       Text({ dimColor: true, children: '\nSwitch for new sessions (current session stays on its account)' }),
       ...profiles.slice(0, 9).map((p, i) => Button({ key: 'switch-' + i, label: p.label, plain: true, hotkey: String(i + 1), onPress: async () => switchProfile($, p) })),
       Box({ flexDirection: 'row', columnGap: 2, children: [
         Button({ key: 'refresh', label: 'Refresh (r)', hotkey: 'r', onPress: async () => refresh($, true) }),
         Button({ key: 'close', label: 'Close (c)', hotkey: 'c', onPress: async () => $.ui.close({ id: 'limitpace' }) }),
       ] }),
+      ...view.readings.flatMap(r => [
+        Text({ bold: true, children: '\n' + r.label + (r.current ? ' * this session' : '') }),
+        barRow(Box, Text, 'Session', r.session, view.now, columns),
+        barRow(Box, Text, 'Week', r.week, view.now, columns, true),
+        ...(columns < 88 ? [Text({ dimColor: true, wrap: 'wrap', children: `Resets: session ${resetText(r.session, view.now)} · week ${resetText(r.week, view.now, true)}` })] : []),
+        Text({ dimColor: true, wrap: 'wrap', children: `${r.source} · age ${Math.max(0, Math.floor((view.now - r.fetchedAt) / 60000))}m${r.error ? '\n' + r.error : ''}` }),
+      ]),
     ] });
   });
 }

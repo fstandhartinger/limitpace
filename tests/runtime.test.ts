@@ -54,3 +54,11 @@ test('runtime text command returns summary and demo collects no credentials or n
   expect(answer.text).toContain('session: 47%');
   expect(fetches).toBe(0);
 });
+test('startup state redraws a band mounted before session.start', async ($, on) => {
+  stubs(on, { demo: 'single' });
+  const ui = await $.ui.mount(site(120));
+  expect(await ui.find({ type: 'Text', text: /47%/ })).toBeUndefined();
+  await $.session.start(start);
+  expect(await ui.find({ type: 'Text', text: /47%/ })).toBeDefined();
+  await ui.unmount();
+});

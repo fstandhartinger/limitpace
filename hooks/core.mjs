@@ -15,7 +15,8 @@ export function percent(value) {
 }
 export function windowReading(used, reset, length) {
   const n = percent(used);
-  return n === undefined ? undefined : { used: n, resetsAt: epoch(reset), length };
+  const resetsAt = epoch(reset);
+  return n === undefined ? undefined : { used: n, ...(resetsAt === undefined ? {} : { resetsAt }), length };
 }
 export function pace(window, now) {
   if (!window || !Number.isFinite(window.resetsAt) || !(window.length > 0)) return undefined;
@@ -127,7 +128,7 @@ export function upsertBlock(text, block) {
   return text + (text.endsWith('\n') || text === '' ? '' : '\n') + replacement + '\n';
 }
 export function resetText(window, now, weekly = false) {
-  if (!window?.resetsAt) return '?';
+  if (!Number.isFinite(window?.resetsAt)) return '?';
   if (!weekly) {
     const minutes = Math.max(0, Math.ceil((window.resetsAt - now) / 60000));
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
