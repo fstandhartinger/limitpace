@@ -36,18 +36,39 @@ async function loadConfig($) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
   } catch { data = {}; configError = 'Config unreadable or invalid JSON; using this Claude session.'; }
   const inputProfiles = Array.isArray(data.claudeProfiles) ? data.claudeProfiles : [{ label: 'Claude', configDir: currentDir }];
-  const profiles = inputProfiles.filter(p => p && typeof p.configDir === 'string').map((p, i) => ({
-    id: 'claude:' + hash(expand(p.configDir, home)), label: cleanLabel(p.label ?? `Claude ${i + 1}`), type: 'claude',
-    configDir: expand(p.configDir, home), current: expand(p.configDir, home) === currentDir,
-    weight: Number(p.weight) > 0 ? Number(p.weight) : 1, tokenCommand: argv(p.tokenCommand),
-  }));
+  const profiles = inputProfiles.filter(p => p && typeof p.configDir === 'string').map((p, i) => {
+    const configDir = expand(p.configDir, home);
+    const credentialsFile = typeof p.credentialsFile === 'string' ? expand(p.credentialsFile, home) : undefined;
+    return {
+      id: 'claude:' + hash(configDir + (credentialsFile ? '|' + credentialsFile : '')), label: cleanLabel(p.label ?? `Claude ${i + 1}`), type: 'claude',
+      configDir, credentialsFile, current: !credentialsFile && configDir === currentDir,
+      weight: Number(p.weight) > 0 ? Number(p.weight) : 1, tokenCommand: argv(p.tokenCommand),
+    };
+  });
+  // Profile-swap setups keep every account's login in its own file and swap one into the shared config dir.
+  // The active one is the profile whose stored login matches the live one (compared in memory, never kept).
+  if (!profiles.some(p => p.current)) {
+    for (const p of profiles.filter(p => p.credentialsFile && p.configDir === currentDir)) {
+      try {
+        const live = JSON.parse(await $.fs.read(p.configDir + '/.credentials.json')).claudeAiOauth ?? {};
+        const stored = JSON.parse(await $.fs.read(p.credentialsFile));
+        const o = stored.claudeAiOauth ?? {};
+        let same = (o.refreshToken && o.refreshToken === live.refreshToken) || (o.accessToken && o.accessToken === live.accessToken);
+        if (!same && stored.accountUuid) {
+          const meta = JSON.parse(await $.fs.read(currentDir === expand('~/.claude', home) ? home + '/.claude.json' : currentDir + '/.claude.json'));
+          same = meta?.oauthAccount?.accountUuid === stored.accountUuid;
+        }
+        if (same) { p.current = true; break; }
+      } catch { /* unknown stays not-current */ }
+    }
+  }
   const providers = (Array.isArray(data.providers) ? data.providers : []).filter(p => p && ['codex', 'json', 'command'].includes(p.type)).map((p, i) => ({
     id: cleanLabel(p.id ?? `provider-${i + 1}`), label: cleanLabel(p.label ?? p.id ?? `Provider ${i + 1}`), type: p.type,
     authFile: expand(p.authFile ?? '~/.codex/auth.json', home), path: expand(p.path ?? '', home),
     argv: argv(p.argv), map: p.map ?? {}, delegate: p.delegate ? cleanLabel(p.delegate) : undefined,
   }));
   // Store identity includes source config, preventing unrelated configurations sharing an id.
-  for (const p of [...profiles, ...providers]) p.cacheKey = 'reading:' + p.id + ':' + hash(JSON.stringify({ type: p.type, configDir: p.configDir, authFile: p.authFile, path: p.path, argv: p.argv, map: p.map, tokenCommand: p.tokenCommand }));
+  for (const p of [...profiles, ...providers]) p.cacheKey = 'reading:' + p.id + ':' + hash(JSON.stringify({ type: p.type, configDir: p.configDir, credentialsFile: p.credentialsFile, authFile: p.authFile, path: p.path, argv: p.argv, map: p.map, tokenCommand: p.tokenCommand }));
   config = { profiles, providers, advisor: data.advisor ?? {}, switchCommand: argv(data.switchCommand), demo: ['single', 'multi'].includes(data.demo) ? data.demo : undefined, home, configError };
   return config;
 }
@@ -82,7 +103,7 @@ async function measure($, provider, now, force, live) {
         if (result.exitCode !== 0) throw new Error();
         token = result.stdout.trim();
       } else {
-        const credentials = JSON.parse(await $.fs.read(provider.configDir + '/.credentials.json'));
+        const credentials = JSON.parse(await $.fs.read(provider.credentialsFile ?? provider.configDir + '/.credentials.json'));
         const oauth = credentials.claudeAiOauth;
         if (!oauth?.accessToken || !Number.isFinite(Number(oauth.expiresAt)) || Number(oauth.expiresAt) <= now) {
           error = `token expired or missing; open a session on ${provider.label}`;

@@ -98,6 +98,12 @@ A `json` provider reads a local file. A `command` provider runs only its configu
 
 Without a map, the JSON keys above are used directly. Reset values may be ISO timestamps, epoch seconds or epoch milliseconds. Missing percentages stay unknown. A successful external reading is cached under its own source-specific store key. Other sessions re-read that key before fetching. This reduces duplicate checks but is not an atomic cross-session lock; simultaneous first fetches can still race. HTTP 429 retains the last successful reading, shows an error, and waits until the next refresh interval before retrying. Manual Refresh deliberately bypasses cache freshness.
 
+Some setups keep one config directory and swap logins in and out of it, storing each account's login in its own file
+(for example `~/.claude/accounts/<label>.json`, in the same `claudeAiOauth` shape as `.credentials.json`). Give those
+profiles a `credentialsFile` ([example](examples/config.profile-swap.json)). LimitPace reads the inactive accounts from
+their own files, and marks as current the profile whose stored login matches the live one (compared in memory, never
+stored). Pair it with a `switchCommand` so the pane's buttons can swap accounts.
+
 On macOS, additional Claude accounts may use Keychain instead of `.credentials.json`. Configure an optional `tokenCommand` on that profile:
 
 ```json

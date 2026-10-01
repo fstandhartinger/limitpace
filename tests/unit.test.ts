@@ -213,3 +213,26 @@ test('shared cache is re-read after credential access immediately before fetchin
   expect(h.calls.filter(c => c.name === 'http.fetch').length).toBe(0);
   expect(h.state.get('view').readings[0].week.used).toBe(31);
 });
+test('profile-swap credentialsFile profiles: active one detected in memory, inactive one measured from its own file', async () => {
+  const cred = (t: string, r: string) => JSON.stringify({ claudeAiOauth: { accessToken: t, refreshToken: r, expiresAt: NOW + HOUR } });
+  const config = { claudeProfiles: [
+    { label: 'Work', configDir: '~/.claude', credentialsFile: '~/.claude/accounts/Work.json' },
+    { label: 'Home', configDir: '~/.claude', credentialsFile: '~/.claude/accounts/Home.json' },
+  ] };
+  const fetched: string[] = [];
+  const h = harness({ config_file: '/cfg.json' }, { now: NOW,
+    limits: [{ kind: 'seven_day', percentUsed: 12, resetsAt: new Date(NOW + WEEK / 2).toISOString() }],
+    files: { '/cfg.json': JSON.stringify(config),
+      '/home/test/.claude/.credentials.json': cred('SENTINEL-HOME-A', 'SENTINEL-HOME-R'),
+      '/home/test/.claude/accounts/Work.json': cred('SENTINEL-WORK-A', 'SENTINEL-WORK-R'),
+      '/home/test/.claude/accounts/Home.json': cred('SENTINEL-HOME-OLD', 'SENTINEL-HOME-R') },
+    fetch: async (url: string, init: any) => { fetched.push(init.headers.Authorization); return { ok: true, status: 200, text: JSON.stringify({ five_hour: { utilization: 5, resets_at: new Date(NOW + HOUR).toISOString() }, seven_day: { utilization: 70, resets_at: new Date(NOW + WEEK / 2).toISOString() } }) }; } });
+  await h.start();
+  const view = h.state.get('view').readings;
+  expect(view.find((r: any) => r.label === 'Home').current).toBe(true);
+  expect(view.find((r: any) => r.label === 'Home').week.used).toBe(12);
+  expect(view.find((r: any) => r.label === 'Work').current).toBeFalsy();
+  expect(view.find((r: any) => r.label === 'Work').week.used).toBe(70);
+  expect(fetched).toEqual(['Bearer SENTINEL-WORK-A']);
+  expect(JSON.stringify([...h.store.values()])).not.toContain('SENTINEL');
+});

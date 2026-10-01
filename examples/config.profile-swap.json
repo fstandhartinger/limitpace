@@ -1,0 +1,10 @@
+{
+  "claudeProfiles": [
+    {"label": "A", "configDir": "~/.claude", "credentialsFile": "~/.claude/accounts/A.json"},
+    {"label": "B", "configDir": "~/.claude", "credentialsFile": "~/.claude/accounts/B.json"}
+  ],
+  "switchCommand": ["claude-account", "switch", "{label}"],
+  "providers": [
+    {"id": "codex", "label": "ChatGPT/Codex", "type": "codex", "authFile": "~/.codex/auth.json", "delegate": "codex exec"}
+  ]
+}
