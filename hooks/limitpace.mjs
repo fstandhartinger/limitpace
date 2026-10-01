@@ -55,6 +55,12 @@ function publicReading(provider, fields, now) {
   return JSON.parse(JSON.stringify({ id: provider.id, label: provider.label, type: provider.type, current: provider.current,
     weight: provider.weight, delegate: provider.delegate, fetchedAt: now, ...fields }));
 }
+async function recentReading($, provider, now, force) {
+  const latest = await $.store.get(provider.cacheKey);
+  if (!force && latest && now - (latest.checkedAt ?? latest.fetchedAt) < options.refresh_minutes * 60000) {
+    return { ...latest, label: provider.label, current: provider.current, delegate: provider.delegate, weight: provider.weight };
+  }
+}
 async function measure($, provider, now, force, live) {
   const key = provider.cacheKey;
   const previous = await $.store.get(key);
@@ -83,6 +89,8 @@ async function measure($, provider, now, force, live) {
         } else token = oauth.accessToken;
       }
       if (!error && token) {
+        const latest = await recentReading($, provider, now, force);
+        if (latest) return latest;
         const response = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
           headers: { Authorization: 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'limitpace/' + VERSION },
         });
@@ -96,6 +104,8 @@ async function measure($, provider, now, force, live) {
       const token = auth.tokens?.access_token;
       if (!token) error = 'token missing; open a Codex session';
       else {
+        const latest = await recentReading($, provider, now, force);
+        if (latest) return latest;
         const headers = { Authorization: 'Bearer ' + token, Accept: 'application/json' };
         if (auth.tokens.account_id) headers['ChatGPT-Account-Id'] = auth.tokens.account_id;
         const response = await $.http.fetch('https://chatgpt.com/backend-api/wham/usage', { headers });

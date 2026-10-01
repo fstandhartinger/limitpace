@@ -198,3 +198,18 @@ test('relative explicit advisor target is under the project root', async () => {
   const h = harness({ advisor: 'file' }, { now: NOW, limits: [{ kind: 'seven_day', percentUsed: 31, resetsAt: new Date(NOW + WEEK / 2).toISOString() }], files: { ...configFiles({ advisor: { target: 'notes.md' } }), '/project/notes.md': 'Original notes\n' } });
   await h.start(); expect(h.files.get('/project/notes.md')).toContain('Original notes\n<!-- limitpace:start -->');
 });
+test('shared cache is re-read after credential access immediately before fetching', async () => {
+  const h = harness({}, { now: NOW, files: { '/home/test/.claude/.credentials.json': JSON.stringify({ claudeAiOauth: { accessToken: 'TEST-SENTINEL', expiresAt: NOW + HOUR } }) } });
+  const original = h.host.fs.read;
+  h.host.fs.read = async path => {
+    const contents = await original(path);
+    if (path.endsWith('.credentials.json')) {
+      const key = h.calls.filter(c => c.name === 'store.get').slice(-1)[0].args[0];
+      h.store.set(key, { id: 'claude:cached', label: 'Claude', type: 'claude', week: windowReading(31, NOW + WEEK / 2, WEEK), source: 'another session', fetchedAt: NOW });
+    }
+    return contents;
+  };
+  await h.start();
+  expect(h.calls.filter(c => c.name === 'http.fetch').length).toBe(0);
+  expect(h.state.get('view').readings[0].week.used).toBe(31);
+});
