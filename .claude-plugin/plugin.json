@@ -7,7 +7,6 @@
   "homepage": "https://github.com/fstandhartinger/limitpace",
   "repository": "https://github.com/fstandhartinger/limitpace",
   "license": "MIT",
-  "icon": "./.claude-plugin/icon.png",
   "privacyPolicyUrl": "https://github.com/fstandhartinger/limitpace/blob/main/PRIVACY.md",
   "keywords": ["usage", "limits", "pace", "delegation", "mods"],
   "types": "./types/index.d.ts",
