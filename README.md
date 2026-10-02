@@ -165,7 +165,7 @@ In the table, **usage refresh** means reading current limits through `$.session.
 | Pane account button callback | Switches for new sessions or copies a launch command; disabled in demos. | None in LimitPace. | Only configured `switchCommand` argv, replacing `{label}` with the selected profile label; nothing by default. | Clipboard when no switch command is configured; a configured helper controls its own effects. |
 | Pane Refresh / Close callbacks | Refresh forces a usage check; Close closes the pane. | Refresh: Claude/Codex endpoints above, as needed; Close: none. | Refresh: configured refresh argv only; Close: none. | Refresh stores/state and optional advisor file block; Close: none. |
 
-There is no permission-related hook: LimitPace does not answer permission requests or change permission settings. The `tool.call` handler answers only its own opt-in usage advice tool.
+There is no permission-related hook: LimitPace does not answer permission requests or change permission settings. Its `classic.SessionStart`, `session.*` and `turn.complete` handlers call `next(e)` first and return its result unchanged; `command.run` handles only LimitPace's own `/limitpace` command. See also [PRIVACY.md](PRIVACY.md). The `tool.call` handler answers only its own opt-in usage advice tool.
 
 ## Surfaces and limitations
 
