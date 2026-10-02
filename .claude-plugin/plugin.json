@@ -1,7 +1,7 @@
 {
   "name": "limitpace",
   "displayName": "LimitPace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live subscription usage and pace bars, with an optional provider-neutral delegation advisor.",
   "author": {"name": "Florian Standhartinger"},
   "homepage": "https://github.com/fstandhartinger/limitpace",
@@ -10,9 +10,9 @@
   "keywords": ["usage", "limits", "pace", "delegation", "mods"],
   "types": "./types/index.d.ts",
   "userConfig": {
-    "layout": {"type": "string", "title": "Layout", "description": "Usage band layout", "options": ["auto", "detailed", "compact", "off"], "default": "auto"},
+    "layout": {"type": "string", "title": "Layout", "description": "Usage band layout: auto, detailed, compact or off", "default": "auto"},
     "config_file": {"type": "string", "title": "Config file", "description": "Optional JSON configuration (or demo:single / demo:multi)", "default": "~/.config/limitpace/config.json"},
-    "advisor": {"type": "string", "title": "Engine advisor", "description": "Opt in to delegation advice", "options": ["off", "prompt", "file", "both"], "default": "off"},
-    "refresh_minutes": {"type": "number", "title": "Refresh minutes", "description": "Minimum interval between external usage checks", "default": 5, "min": 1, "max": 60}
+    "advisor": {"type": "string", "title": "Engine advisor", "description": "Engine advisor: off, prompt, file or both", "default": "off"},
+    "refresh_minutes": {"type": "number", "title": "Refresh minutes", "description": "Minimum minutes between external usage checks, 1-60", "default": 5}
   }
 }

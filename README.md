@@ -36,7 +36,7 @@ With one Claude account and no other providers, `auto` draws separate Session an
 
 ## Configure
 
-Four fields appear in the plugin's configuration picker:
+Four fields appear in the plugin's configuration:
 
 | Field | Default | Values |
 | --- | --- | --- |
@@ -44,6 +44,8 @@ Four fields appear in the plugin's configuration picker:
 | `config_file` | `~/.config/limitpace/config.json` | Optional JSON file, or `demo:single` / `demo:multi` |
 | `advisor` | `off` | `off`, `prompt`, `file`, `both` |
 | `refresh_minutes` | `5` | 1–60 |
+
+LimitPace validates these values at startup: an unrecognized `layout` becomes `auto`, an unrecognized `advisor` becomes `off`, and `refresh_minutes` is converted to a number, defaults to 5 if that conversion produces NaN, and is clamped to 1–60.
 
 For an installed plugin, values live under `pluginConfigs["limitpace@limitpace"].options` in Claude Code settings. For `--plugin-dir`, use `limitpace@inline`. For example:
 
@@ -136,13 +138,34 @@ The advice is a scheduling hint, not a quota guarantee. Unknown or stale data sh
 
 **Network:** only `https://api.anthropic.com/api/oauth/usage` for configured Claude profiles and `https://chatgpt.com/backend-api/wham/usage` for configured Codex providers. It sends an access token to that provider's usage endpoint, plus the required headers; Codex's account id is sent only to its own endpoint when present. No telemetry and no other destination is configured by LimitPace.
 
-**Reads:** its optional JSON config, configured Claude profiles' `.credentials.json`, the configured Codex auth file, and configured JSON provider files. Advisor file mode also reads its chosen project instruction file. It reads `HOME` and `CLAUDE_CONFIG_DIR` only to resolve paths and identify the current profile. Current Claude limits come from the free `$.session.usage()` reading when available; before a response has populated them, the configured account is measured through its usage endpoint.
+**Reads:** its optional JSON config, configured Claude profiles' `.credentials.json` or explicit `credentialsFile`, the configured Codex auth file, and configured JSON provider files. Profile-swap detection compares stored and live login values in memory and may read the account UUID from the current profile's `.claude.json` (or `~/.claude.json` for the default profile). Advisor file mode also reads its chosen project instruction file. It reads `HOME` and `CLAUDE_CONFIG_DIR` only to resolve paths and identify the current profile. Current Claude limits come from the free `$.session.usage()` reading when available; before a response has populated them, the configured account is measured through its usage endpoint.
 
-**Runs:** only argv you configure: `command` providers, `tokenCommand`, and account `switchCommand` when you press a button. No shell is used. Sample paths and commands are examples, not hidden dependencies.
+**Runs:** LimitPace can run commands, but only argv you configure: `command` providers, `tokenCommand`, and account `switchCommand` when you press a button. Nothing runs by default. Each argv is passed directly to `$.process.run` with a five-second timeout; LimitPace does not invoke a shell. A configured executable can itself perform additional actions, so choose helpers you trust. Sample paths and commands are examples, not hidden dependencies.
 
-**Writes:** usage readings in `$.store`, reactive session values in `$.state`, and the selected AGENTS.md/CLAUDE.md or explicit target only in advisor file mode. A switch button without a command writes a launch command to the clipboard. LimitPace never writes credentials or refreshes tokens. Tokens and account ids are never stored in readings, logged, drawn or returned. Exceptions and command output are not echoed into errors.
+**Writes:** usage readings and advisor file snapshots/write times in `$.store`, reactive usage views and prompt advisor snapshots in `$.state`, and the selected AGENTS.md/CLAUDE.md or explicit target only in opt-in advisor file mode. That file update preserves text outside `<!-- limitpace:start -->` and `<!-- limitpace:end -->`. A switch button without a command writes a launch command to the clipboard. LimitPace never writes credentials or refreshes tokens. It reads credentials locally from the user's own files (or configured `tokenCommand`); an access token is sent only to that provider's own usage endpoint. Tokens and account ids are never stored in readings, logged, drawn or returned. Exceptions and command output are not echoed into errors.
 
-The host's usage cache stores only percentages, resets, source, age and error hints. Host calls pass through Claude Code's mod middleware, so an earlier mod may inspect or refuse those calls; only use plugins you trust.
+The usage cache contains provider metadata (id, label, type, current-account flag, weight and delegation hint), parsed usage windows, timestamps, source and generic error hints. Host calls pass through Claude Code's mod middleware, so an earlier mod may inspect or refuse those calls; only use plugins you trust.
+
+### Hook and callback disclosures
+
+In the table, **usage refresh** means reading current limits through `$.session.usage()`, then measuring configured providers as needed. The only HTTP requests are [Claude usage](https://api.anthropic.com/api/oauth/usage) and [Codex usage](https://chatgpt.com/backend-api/wham/usage), with the credential handling described above. A refresh may run configured `tokenCommand` and `command` provider argv, reads configured local sources, updates `$.store` and `$.state`, and may maintain the opt-in advisor file block. Cached external readings are reused until the refresh interval expires unless refresh is forced. Demo collection uses sample readings instead.
+
+| Hook / event or callback | What it does | What it fetches | What it runs | What it writes |
+| --- | --- | --- | --- | --- |
+| `session.start` | Starts only for an interactive session or an enabled advisor; refreshes usage, schedules the timer, registers `/limitpace`, and registers the advice tool for `prompt`/`both`. | Usage refresh: Claude/Codex endpoints above, as needed. | Configured `tokenCommand` and `command` provider argv during refresh; nothing by default. | Refresh stores/state and optional advisor file block. |
+| `classic.SessionStart` with `clear`, `resume`, `fork` | Refreshes after the event when enabled. | Usage refresh: Claude/Codex endpoints above, as needed. | Configured refresh argv only. | Refresh stores/state and optional advisor file block. |
+| `session.measure` | Refreshes after new session measurements when enabled. | Usage refresh: Claude/Codex endpoints above, as needed. | Configured refresh argv only. | Refresh stores/state and optional advisor file block. |
+| `turn.complete` | Refreshes after a main-session turn when enabled; skips subagent turns. | Usage refresh: Claude/Codex endpoints above, as needed. | Configured refresh argv only. | Refresh stores/state and optional advisor file block. |
+| `$.clock.every` callback | Refreshes at the configured 1–60 minute interval; this is a timer callback, not a separate hook. | Usage refresh: Claude/Codex endpoints above, as needed. | Configured refresh argv only. | Refresh stores/state and optional advisor file block. |
+| `prompt.submit` | In opt-in `prompt`/`both` mode, adds advice as prompt context on a significant change and preserves existing context. | None; reads the existing usage view. | None. | Prompt snapshot in `$.state` if the prompt is not dropped. |
+| `tool.call` for `mcp__limitpace__usage` | In opt-in `prompt`/`both` mode, refreshes and answers with advice text. | Usage refresh: Claude/Codex endpoints above, as needed; follows cache freshness. | Configured refresh argv only. | Refresh stores/state; optional advisor file block in `both` mode. |
+| `command.run` for `/limitpace` | `refresh` forces usage refresh; `text` returns a summary; no argument opens the pane on supported surfaces or returns text. Refreshes if config has not yet loaded. | Usage refresh when forced or config is absent; otherwise none. | Configured refresh argv only when refreshing. | Refresh stores/state and optional advisor file block when refreshing; otherwise none. |
+| `ui.render` for `AbovePrompt` | Draws the band from the usage view unless layout is `off`, a survey is present, or the session is disabled. | None. | None. | None. |
+| `ui.render` for the LimitPace `Pane` | Draws usage and buttons from the current view. | None while rendering. | None while rendering. | None while rendering. |
+| Pane account button callback | Switches for new sessions or copies a launch command; disabled in demos. | None in LimitPace. | Only configured `switchCommand` argv, replacing `{label}` with the selected profile label; nothing by default. | Clipboard when no switch command is configured; a configured helper controls its own effects. |
+| Pane Refresh / Close callbacks | Refresh forces a usage check; Close closes the pane. | Refresh: Claude/Codex endpoints above, as needed; Close: none. | Refresh: configured refresh argv only; Close: none. | Refresh stores/state and optional advisor file block; Close: none. |
+
+There is no permission-related hook: LimitPace does not answer permission requests or change permission settings. The `tool.call` handler answers only its own opt-in usage advice tool.
 
 ## Surfaces and limitations
 

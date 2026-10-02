@@ -1,12 +1,45 @@
 import { expect, test } from 'claude-code/testing';
 import { pace, headroom, status, epoch, windowReading, parseCodex, parseMapped, combined, advice, snapshot, changed, upsertBlock, demoReadings, HOUR, WEEK } from '../hooks/core.mjs';
 import { harness, treeText, findButton } from './harness.mjs';
+import { normalizeOptions } from '../hooks/limitpace.mjs';
 const NOW = 1_800_000_000_000;
 const configPath = '/home/test/.config/limitpace/config.json';
 const configFiles = data => ({ [configPath]: JSON.stringify(data) });
 
 // These pure/host simulation tests also run via scripts/test-local.mjs while the
 // official runtime is unavailable. Runtime drawing tests are in runtime.test.ts.
+test('options preserve valid layouts and advisor modes without changing the input', async () => {
+  for (const layout of ['auto', 'detailed', 'compact', 'off']) {
+    for (const advisor of ['off', 'prompt', 'file', 'both']) {
+      const input = { layout, advisor, config_file: 'demo:single', refresh_minutes: '10' };
+      expect(normalizeOptions(input)).toEqual({ ...input, refresh_minutes: 10 });
+      expect(input.refresh_minutes).toBe('10');
+    }
+  }
+  expect(normalizeOptions().refresh_minutes).toBe(5);
+});
+test('options fall back for invalid modes and coerce and clamp refresh minutes', async () => {
+  for (const invalid of ['', 'unknown', null, 42, {}]) {
+    const options = normalizeOptions({ layout: invalid, advisor: invalid });
+    expect(options.layout).toBe('auto'); expect(options.advisor).toBe('off');
+  }
+  for (const [input, expected] of [[undefined, 5], ['bad', 5], [NaN, 5], ['2.5', 2.5], [1, 1], [60, 60], [0, 1], [-10, 1], [61, 60], [Infinity, 60], [-Infinity, 1]]) {
+    expect(normalizeOptions({ refresh_minutes: input }).refresh_minutes).toBe(expected);
+  }
+});
+test('registration applies normalized modes and intervals before enabling host work', async () => {
+  const headless = harness({ advisor: 'invalid', refresh_minutes: 'bad' });
+  await headless.start(false);
+  expect(headless.calls.length).toBe(0); expect(headless.timers.length).toBe(0);
+  const h = harness({ config_file: 'demo:single', layout: 'invalid', advisor: 'invalid', refresh_minutes: 120 }, { now: NOW });
+  await h.start();
+  expect(h.timers[0].ms).toBe(3600000); expect(h.tools.length).toBe(0);
+  expect(treeText(await h.render())).toContain('Session');
+  const fallback = harness({ config_file: 'demo:single', refresh_minutes: 'bad' });
+  await fallback.start(); expect(fallback.timers[0].ms).toBe(300000);
+  const minimum = harness({ config_file: 'demo:single', refresh_minutes: -10 });
+  await minimum.start(); expect(minimum.timers[0].ms).toBe(60000);
+});
 test('pace clamps to the window and calculates signed headroom and status', async () => {
   const w = windowReading(47, NOW + 0.62 * 5 * HOUR, 5 * HOUR);
   expect(Math.round(pace(w, NOW))).toBe(38);
@@ -214,25 +247,25 @@ test('shared cache is re-read after credential access immediately before fetchin
   expect(h.state.get('view').readings[0].week.used).toBe(31);
 });
 test('profile-swap credentialsFile profiles: active one detected in memory, inactive one measured from its own file', async () => {
-  const cred = (t: string, r: string) => JSON.stringify({ claudeAiOauth: { accessToken: t, refreshToken: r, expiresAt: NOW + HOUR } });
+  const cred = (t, r) => JSON.stringify({ claudeAiOauth: { accessToken: t, refreshToken: r, expiresAt: NOW + HOUR } });
   const config = { claudeProfiles: [
     { label: 'Work', configDir: '~/.claude', credentialsFile: '~/.claude/accounts/Work.json' },
     { label: 'Home', configDir: '~/.claude', credentialsFile: '~/.claude/accounts/Home.json' },
   ] };
-  const fetched: string[] = [];
+  const fetched = [];
   const h = harness({ config_file: '/cfg.json' }, { now: NOW,
     limits: [{ kind: 'seven_day', percentUsed: 12, resetsAt: new Date(NOW + WEEK / 2).toISOString() }],
     files: { '/cfg.json': JSON.stringify(config),
       '/home/test/.claude/.credentials.json': cred('SENTINEL-HOME-A', 'SENTINEL-HOME-R'),
       '/home/test/.claude/accounts/Work.json': cred('SENTINEL-WORK-A', 'SENTINEL-WORK-R'),
       '/home/test/.claude/accounts/Home.json': cred('SENTINEL-HOME-OLD', 'SENTINEL-HOME-R') },
-    fetch: async (url: string, init: any) => { fetched.push(init.headers.Authorization); return { ok: true, status: 200, text: JSON.stringify({ five_hour: { utilization: 5, resets_at: new Date(NOW + HOUR).toISOString() }, seven_day: { utilization: 70, resets_at: new Date(NOW + WEEK / 2).toISOString() } }) }; } });
+    fetch: async (url, init) => { fetched.push(init.headers.Authorization); return { ok: true, status: 200, text: JSON.stringify({ five_hour: { utilization: 5, resets_at: new Date(NOW + HOUR).toISOString() }, seven_day: { utilization: 70, resets_at: new Date(NOW + WEEK / 2).toISOString() } }) }; } });
   await h.start();
   const view = h.state.get('view').readings;
-  expect(view.find((r: any) => r.label === 'Home').current).toBe(true);
-  expect(view.find((r: any) => r.label === 'Home').week.used).toBe(12);
-  expect(view.find((r: any) => r.label === 'Work').current).toBeFalsy();
-  expect(view.find((r: any) => r.label === 'Work').week.used).toBe(70);
+  expect(view.find(r => r.label === 'Home').current).toBe(true);
+  expect(view.find(r => r.label === 'Home').week.used).toBe(12);
+  expect(view.find(r => r.label === 'Work').current).toBe(false);
+  expect(view.find(r => r.label === 'Work').week.used).toBe(70);
   expect(fetched).toEqual(['Bearer SENTINEL-WORK-A']);
   expect(JSON.stringify([...h.store.values()])).not.toContain('SENTINEL');
 });

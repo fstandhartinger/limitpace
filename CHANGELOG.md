@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-10-02
+
+- Use directory-compatible user configuration fields and validate layout, advisor
+  and refresh interval values at runtime.
+- Disclose each hook's reads, requests, configured commands and opt-in writes.
+- Cover runtime option normalization in both test runners and make the existing
+  profile-swap unit test compatible with the local Node runner.
+- Retain the types manifest field required by strict mod state validation.
+
 ## 0.1.0 — 2026-10-01 (development)
 
 - Detailed Session/Week bars and a compact multi-account usage band.

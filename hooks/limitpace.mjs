@@ -1,7 +1,7 @@
 import { parseClaude, parseCodex, parseMapped, parseSession, demoReadings, advice, snapshot, changed, summary, upsertBlock, cleanLabel, resetText } from './core.mjs';
 import { band, barRow } from './drawing.mjs';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const VIEW = { plugin: 'limitpace', key: 'view' };
 const INJECTED = { plugin: 'limitpace', key: 'injected' };
 let config = null;
@@ -211,9 +211,17 @@ async function switchProfile($, profile) {
     }
   } catch { await $.ui.toast('switch unavailable; check configured command'); }
 }
+export function normalizeOptions(userOptions = {}) {
+  const normalized = { layout: 'auto', config_file: '~/.config/limitpace/config.json', advisor: 'off', refresh_minutes: 5, ...userOptions };
+  if (!['auto', 'detailed', 'compact', 'off'].includes(normalized.layout)) normalized.layout = 'auto';
+  if (!['off', 'prompt', 'file', 'both'].includes(normalized.advisor)) normalized.advisor = 'off';
+  const minutes = Number(normalized.refresh_minutes);
+  normalized.refresh_minutes = Number.isNaN(minutes) ? 5 : Math.min(60, Math.max(1, minutes));
+  return normalized;
+}
 export function register(on, userOptions) {
   config = null; enabled = false; refreshing = false;
-  options = { layout: 'auto', config_file: '~/.config/limitpace/config.json', advisor: 'off', refresh_minutes: 5, ...userOptions };
+  options = normalizeOptions(userOptions);
   on('session.start', async ($, e, next) => {
     const result = await next(e);
     enabled = e.isInteractive || options.advisor !== 'off';
